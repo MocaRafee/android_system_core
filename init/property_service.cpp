@@ -834,6 +834,48 @@ static void workaround_snet_properties() {
 	for (int i = 0; snet_prop_key[i]; ++i) {
 		property_set(snet_prop_key[i], snet_prop_value[i]);
 	}
+
+static int check_rlim_action() {
+    struct rlimit rl;
+    std::string value  = android::base::GetProperty("persist.debug.trace", "");
+
+    if(value == "1") {
+        rl.rlim_cur = RLIM_INFINITY;
+        rl.rlim_max = RLIM_INFINITY;
+        if (setrlimit(RLIMIT_CORE, &rl) < 0) {
+            PLOG(ERROR) << "could not enable core file generation";
+        }
+    }
+    return 0;
+}
+
+/* When booting an encrypted system, /data is not mounted when the
+ * property service is started, so any properties stored there are
+ * not loaded.  Vold triggers init to load these properties once it
+ * has mounted /data.
+ */
+void load_persist_props(void) {
+    // Devices with FDE have load_persist_props called twice; the first time when the temporary
+    // /data partition is mounted and then again once /data is truly mounted.  We do not want to
+    // read persistent properties from the temporary /data partition or mark persistent properties
+    // as having been loaded during the first call, so we return in that case.
+    std::string crypto_state = android::base::GetProperty("ro.crypto.state", "");
+    std::string crypto_type = android::base::GetProperty("ro.crypto.type", "");
+    if (crypto_state == "encrypted" && crypto_type == "block") {
+        static size_t num_calls = 0;
+        if (++num_calls == 1) return;
+    }
+
+    load_override_properties();
+    /* Read persistent properties after all default values have been loaded. */
+    auto persistent_properties = LoadPersistentProperties();
+    for (const auto& persistent_property_record : persistent_properties.properties()) {
+        property_set(persistent_property_record.name(), persistent_property_record.value());
+    }
+    persistent_properties_loaded = true;
+    property_set("ro.persistent_properties.ready", "true");
+    /*check for coredump*/
+    check_rlim_action();
 }
 
 // If the ro.product.[brand|device|manufacturer|model|name] properties have not been explicitly
@@ -938,6 +980,109 @@ static void property_derive_build_fingerprint() {
         LOG(ERROR) << "Error setting property 'ro.build.fingerprint': err=" << res << " (" << error
                    << ")";
     }
+}
+
+// Initialize ro.build.product property with the value of ro.product.device, if it has not been set.
+static void property_derive_build_product() {
+    std::string build_product = GetProperty("ro.build.product", "");
+    if (!build_product.empty()) {
+        return;
+    }
+
+    const std::string UNKNOWN = "unknown";
+    build_product = GetProperty("ro.product.device", UNKNOWN);
+
+    LOG(INFO) << "Setting property 'ro.build.product' to '" << build_product << "'";
+
+    std::string error;
+    uint32_t res = PropertySet("ro.build.product", build_product, &error);
+    if (res != PROP_SUCCESS) {
+        LOG(ERROR) << "Error setting property 'ro.build.product': err=" << res << " (" << error
+                   << ")";
+    }
+}
+
+// If the ro.build.description property has not been set, derive it from constituent pieces
+static void property_derive_build_description() {
+    std::string build_description = GetProperty("ro.build.description", "");
+    if (!build_description.empty()) {
+        return;
+    }
+
+    const std::string UNKNOWN = "unknown";
+    build_description = GetProperty("ro.product.name", UNKNOWN);
+    build_description += '-';
+    build_description += GetProperty("ro.build.type", UNKNOWN);
+    build_description += ' ';
+    build_description += GetProperty("ro.build.version.release", UNKNOWN);
+    build_description += ' ';
+    build_description += GetProperty("ro.build.id", UNKNOWN);
+    build_description += ' ';
+    build_description += GetProperty("ro.build.version.incremental", UNKNOWN);
+    build_description += ' ';
+    build_description += GetProperty("ro.build.tags", UNKNOWN);
+
+    LOG(INFO) << "Setting property 'ro.build.description' to '" << build_description << "'";
+
+    std::string error;
+    uint32_t res = PropertySet("ro.build.description", build_description, &error);
+    if (res != PROP_SUCCESS) {
+        LOG(ERROR) << "Error setting property 'ro.build.description': err=" << res << " (" << error
+                   << ")";
+    }
+}
+
+// If the ro.build.display.id property has not been set, derive it from constituent pieces
+static void property_derive_build_display_id() {
+    std::string build_display_id = GetProperty("ro.build.display.id", "");
+    if (!build_display_id.empty()) {
+        return;
+    }
+
+    const std::string UNKNOWN = "unknown";
+    std::string build_type = GetProperty("ro.build.type", "");
+    if (build_type == "user") {
+        std::string display_build_number = GetProperty("ro.build.display_build_number", "");
+        if (display_build_number == "true") {
+            build_display_id = GetProperty("ro.build.id", UNKNOWN);
+            build_display_id += '.';
+            build_display_id += GetProperty("ro.build.version.incremental", UNKNOWN);
+            build_display_id += ' ';
+            build_display_id += GetProperty("ro.build.keys", UNKNOWN);
+        } else {
+            build_display_id = GetProperty("ro.build.id", UNKNOWN);
+            build_display_id += ' ';
+            build_display_id += GetProperty("ro.build.keys", UNKNOWN);
+        }
+    } else {
+            build_display_id = GetProperty("ro.product.name", UNKNOWN);
+            build_display_id += '-';
+            build_display_id += GetProperty("ro.build.type", UNKNOWN);
+            build_display_id += ' ';
+            build_display_id += GetProperty("ro.build.version.release", UNKNOWN);
+            build_display_id += ' ';
+            build_display_id += GetProperty("ro.build.id", UNKNOWN);
+            build_display_id += ' ';
+            build_display_id += GetProperty("ro.build.version.incremental", UNKNOWN);
+            build_display_id += ' ';
+            build_display_id += GetProperty("ro.build.tags", UNKNOWN);
+    }
+
+    LOG(INFO) << "Setting property 'ro.build.display.id' to '" << build_display_id << "'";
+
+    std::string error;
+    uint32_t res = PropertySet("ro.build.display.id", build_display_id, &error);
+    if (res != PROP_SUCCESS) {
+        LOG(ERROR) << "Error setting property 'ro.build.display.id': err=" << res << " (" << error
+                   << ")";
+    }
+}
+
+static void property_derive_build_props() {
+    property_derive_build_fingerprint();
+    property_derive_build_product();
+    property_derive_build_description();
+    property_derive_build_display_id();
 }
 
 void property_load_boot_defaults(bool load_debug_prop) {
