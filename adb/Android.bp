@@ -161,6 +161,7 @@ libadb_srcs = [
     "transport_fd.cpp",
     "transport_legacy.cpp",
     "transport_local.cpp",
+    "transport_usb.cpp",
     "types.cpp",
 ]
 
@@ -196,7 +197,6 @@ cc_library_host_static {
         "client/usb_libusb.cpp",
         "client/usb_dispatch.cpp",
         "client/transport_mdns.cpp",
-        "client/transport_usb.cpp",
         "client/pairing/pairing_client.cpp",
     ],
 
@@ -374,6 +374,10 @@ cc_library_static {
         "daemon/jdwp_service.cpp",
         "daemon/logging.cpp",
         "daemon/adb_wifi.cpp",
+    ],
+
+    local_include_dirs: [
+        "daemon/include",
     ],
 
     generated_headers: ["platform_tools_version"],
@@ -562,9 +566,8 @@ cc_library {
         "libmdnssd",
     ],
 
-    visibility: [
-        "//bootable/recovery/minadbd",
-        "//system/core/adb",
+    export_include_dirs: [
+        "daemon/include",
     ],
 }
 

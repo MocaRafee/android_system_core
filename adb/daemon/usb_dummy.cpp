@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "usb_legacy.h"
+#include <adbd/usb.h>
 
 #include <android-base/logging.h>
 

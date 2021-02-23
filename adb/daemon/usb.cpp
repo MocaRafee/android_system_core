@@ -45,9 +45,10 @@
 #include <android-base/properties.h>
 #include <android-base/thread_annotations.h>
 
+#include <adbd/usb.h>
+
 #include "adb_unique_fd.h"
 #include "adb_utils.h"
-#include "daemon/usb_ffs.h"
 #include "sysdeps/chrono.h"
 #include "transport.h"
 #include "types.h"

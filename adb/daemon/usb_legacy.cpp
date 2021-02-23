@@ -42,7 +42,7 @@
 #include <android-base/properties.h>
 
 #include "adb.h"
-#include "usb_legacy.h"
+#include "adbd/usb.h"
 #include "transport.h"
 
 using namespace std::chrono_literals;
